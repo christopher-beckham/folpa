@@ -1,0 +1,71 @@
+#!/usr/bin/env python 
+
+from subprocess import check_output
+import os
+import pandas as pd
+import sys
+import argparse
+import glob
+
+def parse_args():
+  parser = argparse.ArgumentParser(description="")
+  parser.add_argument('--glob', default='_trial=*')
+  parser.add_argument('--filter', default=None)
+  args = parser.parse_args()
+  return args
+
+
+args = parse_args()
+
+result = []
+folders = glob.glob("*/")
+for folder in folders:
+  these_folders = glob.glob("%s/%s" % (folder, args.glob))
+  result += these_folders
+
+if len(result) == 0:
+  raise Exception("Could not find any subfolders with the glob: %s" % args.glob)
+
+
+# First collect all the possible keys.
+keys = set()
+for line in result:
+  _, line = line.split("/")
+  line = line.split(",")
+  for elem in line:
+    elem = elem.split("=")
+    if len(elem) == 2:
+      keys.add(elem[0])
+
+# Now make records for each line.
+entries = []
+for line_ in result:
+  this_record = {key:None for key in keys}
+  exp_name, line = line_.split("/")
+  line = line.split(",")
+  for elem in line:
+    elem = elem.split("=")
+    if len(elem) == 2:
+      this_record[elem[0]] = elem[1]
+  # Record experiment name
+  this_record['name'] = exp_name
+  # Also see if a results.txt exists,
+  # and get the line count of that.
+  this_record['wcl'] = None
+  results_file = "%s/results.txt" % line_
+  if os.path.exists(results_file):
+    lc = check_output("wc -l %s" % results_file, shell=True).decode('utf-8').split()[0]
+    this_record['wcl'] = lc
+  entries.append(this_record)
+
+df = pd.DataFrame.from_dict(entries)
+df = df[df['_trial'] != "DEBUG"]
+if args.filter is not None:
+  key, val = args.filter.split("=")
+  df = df[df[key] == val]
+df = df.sort_values('_trial', ascending=False)
+
+#with pd.option_context('display.max_rows', None):  # more options can be specified also
+#    print(df)
+
+print(df.to_csv(index=False))
